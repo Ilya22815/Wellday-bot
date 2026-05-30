@@ -101,7 +101,7 @@ def button(update: Update, context: CallbackContext):
         query.edit_message_text(
             "📞 *Связаться с нами*\n\n"
             "📱 Телефон: +7-977-697-90-12\n"
-            "📧 Email: WellDay365@yandex.ru\n"
+            "📧 Email: info@well-day.ru\n"
             "🌐 Сайт: well-day.ru\n\n"
             "Или напишите прямо здесь!",
             parse_mode="Markdown",
