@@ -1,39 +1,82 @@
 """
 Wellday Lead Finder V5
 ======================
-Ищет компании в Москве через 2GIS,
-находит email на сайте компании,
-генерирует письмо под отрасль,
-отправляет карточки лида в Telegram.
+Источники данных (работают вместе):
+  - 2GIS API     → компании с телефонами (нужен ключ dev.2gis.ru)
+  - hh.ru API    → компании с вакансиями (нужен ключ dev.hh.ru)
 
 Запуск: python main.py
 """
 
 import pandas as pd
-from gis_parser import get_companies
 from email_finder import find_emails_on_site, generate_email_patterns
 from scorer import score
 from letter_generator import generate_letter
 from telegram_sender import send_lead, send_summary
 
 # ============================================================
-# КОНФИГ
+# КОНФИГ — вставляй ключи по мере получения
 # ============================================================
-TELEGRAM_TOKEN = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
+TELEGRAM_TOKEN  = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
 TELEGRAM_CHAT_ID = "8819726375"
-GIS_API_KEY = ""        # вставь ключ с dev.2gis.ru
-MIN_SCORE = 50          # минимальный score для отправки
+
+GIS_API_KEY  = ""   # ключ с dev.2gis.ru  (бесплатно, сразу)
+HH_CLIENT_ID = ""   # ключ с dev.hh.ru    (придёт после проверки)
+
+MIN_SCORE = 50
 # ============================================================
+
+
+def collect_companies():
+    companies = []
+    seen = set()
+
+    # --- 2GIS ---
+    if GIS_API_KEY:
+        from gis_parser import get_companies as gis_get
+        print("🔍 Ищем через 2GIS...")
+        gis_companies = gis_get(api_key=GIS_API_KEY)
+        for c in gis_companies:
+            key = c["name"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                c["source"] = "2GIS"
+                companies.append(c)
+        print(f"   2GIS: {len(gis_companies)} компаний")
+    else:
+        print("⚠️  2GIS ключ не указан — пропускаем")
+
+    # --- hh.ru ---
+    if HH_CLIENT_ID:
+        from hh_parser import get_companies as hh_get
+        print("🔍 Ищем через hh.ru...")
+        hh_companies = hh_get(client_id=HH_CLIENT_ID)
+        added = 0
+        for c in hh_companies:
+            key = c["name"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                c["source"] = "hh.ru"
+                companies.append(c)
+                added += 1
+        print(f"   hh.ru: {added} новых компаний")
+    else:
+        print("⚠️  hh.ru ключ не указан — пропускаем (ждём одобрения)")
+
+    return companies
 
 
 def run():
-    if not GIS_API_KEY:
-        print("❌ Вставь GIS_API_KEY в main.py!")
+    if not GIS_API_KEY and not HH_CLIENT_ID:
+        print("❌ Нет ни одного ключа! Заполни GIS_API_KEY или HH_CLIENT_ID в main.py")
         return
 
-    print("🔍 Ищем компании через 2GIS...")
-    companies = get_companies(api_key=GIS_API_KEY)
-    print(f"✅ Найдено компаний: {len(companies)}")
+    companies = collect_companies()
+    print(f"\n✅ Всего компаний: {len(companies)}")
+
+    if not companies:
+        print("Компании не найдены. Проверь ключи.")
+        return
 
     hot_leads = []
 
@@ -43,7 +86,7 @@ def run():
 
         print(f"[{i}/{len(companies)}] {name}")
 
-        # Ищем email на сайте компании
+        # Ищем email на сайте
         emails = find_emails_on_site(site) if site else []
         if not emails:
             emails = generate_email_patterns(name, site)
@@ -60,8 +103,6 @@ def run():
             letter = generate_letter(company)
             company["letter"] = letter
             hot_leads.append(company)
-
-            # Отправляем в Telegram
             send_lead(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, company, letter)
 
     print(f"\n📊 Горячих лидов (score ≥ {MIN_SCORE}): {len(hot_leads)}")
@@ -70,14 +111,15 @@ def run():
     rows = []
     for c in hot_leads:
         rows.append({
-            "Компания": c.get("name"),
-            "Score": c.get("score"),
-            "Отрасль": ", ".join(c.get("industries", [])),
-            "Телефон": c.get("phone"),
-            "Email": ", ".join(c.get("emails", [])[:2]),
-            "Сайт": c.get("site_url"),
-            "Адрес": c.get("address"),
-            "Письмо": c.get("letter", "").replace("\n", " "),
+            "Компания":  c.get("name"),
+            "Score":     c.get("score"),
+            "Источник":  c.get("source"),
+            "Отрасль":   ", ".join(c.get("industries", [])),
+            "Телефон":   c.get("phone"),
+            "Email":     ", ".join(c.get("emails", [])[:2]),
+            "Сайт":      c.get("site_url"),
+            "Адрес":     c.get("address", ""),
+            "Письмо":    c.get("letter", "").replace("\n", " "),
         })
 
     df = pd.DataFrame(rows)
