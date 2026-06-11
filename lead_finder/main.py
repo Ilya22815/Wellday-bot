@@ -20,8 +20,8 @@ from telegram_sender import send_lead, send_summary
 # ============================================================
 # КОНФИГ — заполни перед запуском
 # ============================================================
-TELEGRAM_TOKEN = "ВАШ_ТОКЕН_БОТА"      # создать через @BotFather
-TELEGRAM_CHAT_ID = "ВАШ_CHAT_ID"       # узнать через @userinfobot
+TELEGRAM_TOKEN = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
+TELEGRAM_CHAT_ID = "8819726375"
 GIS_API_KEY = ""                         # dev.2gis.ru (бесплатно, опционально)
 MIN_SCORE = 60                           # минимальный score для отправки в Telegram
 HH_PAGES = 5                             # кол-во страниц hh.ru (50 компаний каждая)
