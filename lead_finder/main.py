@@ -20,7 +20,7 @@ from telegram_sender import send_lead, send_summary
 TELEGRAM_TOKEN  = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
 TELEGRAM_CHAT_ID = "8819726375"
 
-GIS_API_KEY  = ""   # ключ с dev.2gis.ru  (бесплатно, сразу)
+GIS_API_KEY  = "ece1b98f-ad93-4671-b213-22d108a36b71"   # 2GIS API key
 HH_CLIENT_ID = ""   # ключ с dev.hh.ru    (придёт после проверки)
 
 MIN_SCORE = 50
