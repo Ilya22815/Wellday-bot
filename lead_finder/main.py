@@ -1,36 +1,38 @@
 """
 Wellday Lead Finder V5
 ======================
-Ищет компании в Москве с 50+ сотрудниками через hh.ru и 2GIS,
-находит email и телефон, генерирует письмо, отправляет в Telegram.
+Ищет компании в Москве через 2GIS,
+находит email на сайте компании,
+генерирует письмо под отрасль,
+отправляет карточки лида в Telegram.
 
 Запуск: python main.py
-
-Нужно заполнить конфиг ниже.
 """
 
 import pandas as pd
-from hh_parser import get_companies
-from gis_parser import get_phone_by_name
+from gis_parser import get_companies
 from email_finder import find_emails_on_site, generate_email_patterns
 from scorer import score
 from letter_generator import generate_letter
 from telegram_sender import send_lead, send_summary
 
 # ============================================================
-# КОНФИГ — заполни перед запуском
+# КОНФИГ
 # ============================================================
 TELEGRAM_TOKEN = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
 TELEGRAM_CHAT_ID = "8819726375"
-GIS_API_KEY = ""                         # dev.2gis.ru (бесплатно, опционально)
-MIN_SCORE = 60                           # минимальный score для отправки в Telegram
-HH_PAGES = 5                             # кол-во страниц hh.ru (50 компаний каждая)
+GIS_API_KEY = ""        # вставь ключ с dev.2gis.ru
+MIN_SCORE = 50          # минимальный score для отправки
 # ============================================================
 
 
 def run():
-    print("🔍 Ищем компании на hh.ru...")
-    companies = get_companies(pages=HH_PAGES, per_page=50, min_vacancies=3)
+    if not GIS_API_KEY:
+        print("❌ Вставь GIS_API_KEY в main.py!")
+        return
+
+    print("🔍 Ищем компании через 2GIS...")
+    companies = get_companies(api_key=GIS_API_KEY)
     print(f"✅ Найдено компаний: {len(companies)}")
 
     hot_leads = []
@@ -41,21 +43,18 @@ def run():
 
         print(f"[{i}/{len(companies)}] {name}")
 
-        # Ищем email на сайте
+        # Ищем email на сайте компании
         emails = find_emails_on_site(site) if site else []
         if not emails:
             emails = generate_email_patterns(name, site)
         company["emails"] = emails
 
-        # Ищем телефон через 2GIS (если есть ключ)
-        phone = get_phone_by_name(name, GIS_API_KEY) if GIS_API_KEY else None
-        company["phone"] = phone
-
         # Скоринг
         s = score(company)
         company["score"] = s
 
-        print(f"   score={s} | email={emails[:1]} | phone={phone}")
+        phone = company.get("phone") or "—"
+        print(f"   score={s} | тел={phone} | email={emails[:1]}")
 
         if s >= MIN_SCORE:
             letter = generate_letter(company)
@@ -63,8 +62,7 @@ def run():
             hot_leads.append(company)
 
             # Отправляем в Telegram
-            if TELEGRAM_TOKEN != "ВАШ_ТОКЕН_БОТА":
-                send_lead(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, company, letter)
+            send_lead(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, company, letter)
 
     print(f"\n📊 Горячих лидов (score ≥ {MIN_SCORE}): {len(hot_leads)}")
 
@@ -74,13 +72,11 @@ def run():
         rows.append({
             "Компания": c.get("name"),
             "Score": c.get("score"),
-            "Сотрудников": c.get("employee_count"),
-            "Вакансий": c.get("open_vacancies"),
             "Отрасль": ", ".join(c.get("industries", [])),
             "Телефон": c.get("phone"),
             "Email": ", ".join(c.get("emails", [])[:2]),
             "Сайт": c.get("site_url"),
-            "hh.ru": c.get("hh_url"),
+            "Адрес": c.get("address"),
             "Письмо": c.get("letter", "").replace("\n", " "),
         })
 
@@ -88,9 +84,7 @@ def run():
     df.to_csv("leads.csv", index=False, encoding="utf-8-sig", sep=";")
     print("💾 Сохранено в leads.csv")
 
-    # Итог в Telegram
-    if TELEGRAM_TOKEN != "ВАШ_ТОКЕН_БОТА":
-        send_summary(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, len(companies), len(hot_leads))
+    send_summary(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, len(companies), len(hot_leads))
 
 
 if __name__ == "__main__":
