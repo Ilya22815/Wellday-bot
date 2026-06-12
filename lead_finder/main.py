@@ -8,6 +8,7 @@ from letter_generator import generate_letter
 TELEGRAM_TOKEN   = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
 TELEGRAM_CHAT_ID = "8819726375"
 GIS_API_KEY      = "ece1b98f-ad93-4671-b213-22d108a36b71"
+YANDEX_API_KEY   = ""
 HH_CLIENT_ID     = ""
 MIN_SCORE        = 30
 
@@ -42,6 +43,20 @@ def collect_companies():
                 c["source"] = "2GIS"
                 companies.append(c)
         print(f"   2GIS: {len(gis_companies)} компаний")
+
+    if YANDEX_API_KEY:
+        from yandex_parser import get_companies as yandex_get
+        print("Ищем через Яндекс...")
+        yandex_companies = yandex_get(api_key=YANDEX_API_KEY)
+        added = 0
+        for c in yandex_companies:
+            key = c["name"].lower().strip()
+            if key not in seen_names:
+                seen_names.add(key)
+                c["source"] = "Яндекс"
+                companies.append(c)
+                added += 1
+        print(f"   Яндекс: {added} новых компаний")
 
     if HH_CLIENT_ID:
         from hh_parser import get_companies as hh_get
