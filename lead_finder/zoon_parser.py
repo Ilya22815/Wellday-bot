@@ -54,6 +54,12 @@ def get_companies(pages_per_category=2):
                     driver.get(page_url)
                     time.sleep(4)
 
+                    # Отладка — сохраняем HTML первой страницы
+                    if page == 1 and base_url == CATEGORIES[0][0]:
+                        with open("zoon_debug.html", "w", encoding="utf-8") as f:
+                            f.write(driver.page_source)
+                        print("[Zoon] Сохранил HTML в zoon_debug.html")
+
                     items = _extract_companies(driver, industry)
                     added = 0
                     for item in items:
