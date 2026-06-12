@@ -8,8 +8,9 @@ from letter_generator import generate_letter
 TELEGRAM_TOKEN   = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
 TELEGRAM_CHAT_ID = "8819726375"
 GIS_API_KEY      = "ece1b98f-ad93-4671-b213-22d108a36b71"
-YANDEX_API_KEY   = "7d3b5c9b-9157-4ac0-b87d-c4cb3f235f26"
+YANDEX_API_KEY   = ""
 HH_CLIENT_ID     = ""
+USE_ZOON         = True
 MIN_SCORE        = 30
 
 SEEN_FILE = "seen.json"
@@ -57,6 +58,20 @@ def collect_companies():
                 companies.append(c)
                 added += 1
         print(f"   Яндекс: {added} новых компаний")
+
+    if USE_ZOON:
+        from zoon_parser import get_companies as zoon_get
+        print("Ищем через Zoon.ru...")
+        zoon_companies = zoon_get()
+        added = 0
+        for c in zoon_companies:
+            key = c["name"].lower().strip()
+            if key not in seen_names:
+                seen_names.add(key)
+                c["source"] = "Zoon"
+                companies.append(c)
+                added += 1
+        print(f"   Zoon: {added} новых компаний")
 
     if HH_CLIENT_ID:
         from hh_parser import get_companies as hh_get
