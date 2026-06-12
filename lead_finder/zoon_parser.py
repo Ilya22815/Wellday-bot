@@ -2,9 +2,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
 import time
 import re
 
@@ -46,32 +45,24 @@ def get_companies(pages_per_category=2):
     try:
         for base_url, industry in CATEGORIES:
             print(f"[Zoon] Категория: {industry}...")
+            # Extract the category path for URL-based filtering
+            # e.g. "https://zoon.ru/moscow/it_outsourcing/" -> "/moscow/it_outsourcing/"
+            category_path = base_url.replace("https://zoon.ru", "").rstrip("/")
 
             for page in range(1, pages_per_category + 1):
                 page_url = base_url if page == 1 else f"{base_url}?page={page}"
 
                 try:
                     driver.get(page_url)
-                    time.sleep(4)
+                    time.sleep(5)
 
-                    # Отладка — сохраняем HTML и пушим на GitHub
+                    html = driver.page_source
+
+                    # On first page of first category, print diagnostic info
                     if page == 1 and base_url == CATEGORIES[0][0]:
-                        with open("zoon_debug.html", "w", encoding="utf-8") as f:
-                            f.write(driver.page_source)
-                        print("[Zoon] Сохранил HTML, пушу на GitHub...")
-                        import subprocess, os
-                        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                        debug_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zoon_debug.html")
-                        r1 = subprocess.run(["git", "-C", repo_root, "add", debug_path], capture_output=True, text=True)
-                        r2 = subprocess.run(["git", "-C", repo_root, "commit", "-m", "debug: Zoon HTML dump"], capture_output=True, text=True)
-                        r3 = subprocess.run(["git", "-C", repo_root, "push", "origin", "claude/code-editing-capability-q77b1y"], capture_output=True, text=True)
-                        if r3.returncode == 0:
-                            print("[Zoon] HTML на GitHub")
-                        else:
-                            print(f"[Zoon] Ошибка push: {r3.stderr[:200]}")
-                            print(f"[Zoon] add: {r1.returncode}, commit: {r2.returncode}, push: {r3.returncode}")
+                        _print_diagnostics(html, category_path)
 
-                    items = _extract_companies(driver, industry)
+                    items = _extract_companies_bs4(html, industry, category_path)
                     added = 0
                     for item in items:
                         name = item.get("name", "")
@@ -79,6 +70,8 @@ def get_companies(pages_per_category=2):
                             seen_names.add(name)
                             companies.append(item)
                             added += 1
+
+                    print(f"[Zoon]   стр.{page}: найдено {added} компаний")
 
                     if added == 0:
                         break
@@ -98,100 +91,97 @@ def get_companies(pages_per_category=2):
     return companies
 
 
-def _extract_companies(driver, industry):
+def _print_diagnostics(html, category_path):
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.text if soup.title else "нет"
+    print(f"[Zoon] Заголовок страницы: {title}")
+
+    # Count links matching company URL pattern
+    pattern = re.compile(r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+")
+    matching = [a["href"] for a in soup.find_all("a", href=True) if pattern.match(a["href"])]
+    print(f"[Zoon] Ссылок на компании найдено: {len(matching)}")
+
+    # Show first 2000 chars of HTML for debugging
+    print(f"[Zoon] === НАЧАЛО HTML ===")
+    print(html[:2000])
+    print(f"[Zoon] === КОНЕЦ HTML (показаны первые 2000 символов из {len(html)}) ===")
+
+
+def _extract_companies_bs4(html, industry, category_path):
+    soup = BeautifulSoup(html, "html.parser")
     companies = []
+    seen_hrefs = set()
 
-    # Пробуем разные селекторы карточек
-    cards = []
-    for selector in [
-        "[class*='company-item']",
-        "[class*='CompanyCard']",
-        "[class*='service-item']",
-        "[class*='place-item']",
-        "article",
-        "li[class*='company']",
-    ]:
-        cards = driver.find_elements(By.CSS_SELECTOR, selector)
-        if cards:
-            break
+    # Strategy: find all <a> links pointing to company detail pages
+    # Zoon company URLs look like: https://zoon.ru/moscow/it_outsourcing/some-company/
+    pattern = re.compile(r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+/?$")
 
-    if not cards:
-        return companies
+    company_links = [a for a in soup.find_all("a", href=True) if pattern.match(a["href"])]
 
-    for card in cards:
-        try:
-            name = _extract_name(card)
-            if not name or len(name) < 3:
-                continue
-
-            phone   = _extract_phone(card)
-            site    = _extract_site(card)
-            address = _extract_address(card)
-
-            companies.append({
-                "name": name,
-                "phone": phone,
-                "site_url": site,
-                "address": address,
-                "industries": [industry],
-                "open_vacancies": 0,
-                "employee_count": 0,
-                "trusted": True,
-                "emails": [],
-            })
-        except Exception:
+    for link in company_links:
+        href = link["href"].rstrip("/")
+        if href in seen_hrefs:
             continue
+        seen_hrefs.add(href)
+
+        # The company name is the link text, or text of a heading inside the link
+        name = link.get_text(strip=True)
+        if not name or len(name) < 3:
+            continue
+
+        # Walk up to find a card container that has phone/address
+        container = link.parent
+        for _ in range(4):
+            if container is None:
+                break
+            text = container.get_text(" ", strip=True)
+            if re.search(r"\+?[\d][\d\s\-\(\)]{6,}", text):
+                break
+            container = container.parent
+
+        phone = _find_phone(container) if container else None
+        address = _find_address(container) if container else None
+
+        companies.append({
+            "name": name,
+            "phone": phone,
+            "site_url": None,
+            "address": address,
+            "industries": [industry],
+            "open_vacancies": 0,
+            "employee_count": 0,
+            "trusted": True,
+            "emails": [],
+        })
 
     return companies
 
 
-def _extract_name(card):
-    for selector in ["h2", "h3", "h1", "[class*='title']", "[class*='name']"]:
-        try:
-            els = card.find_elements(By.CSS_SELECTOR, selector)
-            for el in els:
-                text = el.text.strip()
-                if text and len(text) > 2:
-                    return text
-        except Exception:
-            continue
+def _find_phone(tag):
+    if tag is None:
+        return None
+    text = tag.get_text(" ", strip=True)
+    m = re.search(r"(\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}", text)
+    if m:
+        return m.group(0)
+    m = re.search(r"\+?[\d][\d\s\-\(\)]{9,14}", text)
+    if m:
+        return m.group(0).strip()
     return None
 
 
-def _extract_phone(card):
-    for selector in ["[class*='phone']", "[class*='tel']", "[itemprop='telephone']"]:
-        try:
-            els = card.find_elements(By.CSS_SELECTOR, selector)
-            for el in els:
-                text = el.text.strip()
-                if re.search(r"\+?[\d\s\-\(\)]{7,}", text):
-                    return text
-        except Exception:
-            continue
-    return None
-
-
-def _extract_site(card):
-    for selector in ["[class*='site']", "[class*='web']", "[itemprop='url']"]:
-        try:
-            els = card.find_elements(By.CSS_SELECTOR, selector)
-            for el in els:
-                href = el.get_attribute("href") or el.text.strip()
-                if href and href.startswith("http") and "zoon.ru" not in href:
-                    return href
-        except Exception:
-            continue
-    return None
-
-
-def _extract_address(card):
-    for selector in ["[class*='address']", "[class*='addr']", "[itemprop='address']"]:
-        try:
-            els = card.find_elements(By.CSS_SELECTOR, selector)
-            for el in els:
-                text = el.text.strip()
-                if text:
-                    return text
-        except Exception:
-            continue
+def _find_address(tag):
+    if tag is None:
+        return None
+    # Look for itemprop=address first
+    el = tag.find(attrs={"itemprop": "address"})
+    if el:
+        return el.get_text(strip=True)
+    # Look for class containing 'address' or 'addr'
+    for el in tag.find_all(True):
+        cls = " ".join(el.get("class", []))
+        if re.search(r"address|addr|location", cls, re.I):
+            text = el.get_text(strip=True)
+            if text:
+                return text
     return None
