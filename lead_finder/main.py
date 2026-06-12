@@ -1,4 +1,4 @@
-from email_finder import find_emails_on_site, generate_email_patterns
+from email_finder import find_emails_on_site
 from scorer import score
 from letter_generator import generate_letter
 
@@ -103,15 +103,14 @@ def run():
         print(f"[{i}/{len(companies)}] {name}")
 
         emails = find_emails_on_site(site) if site else []
-        if not emails:
-            emails = generate_email_patterns(name, site)
         company["emails"] = emails
 
         s = score(company)
         company["score"] = s
 
         phone = company.get("phone") or "нет"
-        print(f"   score={s} | тел={phone} | email={emails[:1]}")
+        found = emails[:1] if emails else ("сайт: " + site if site else "не найдено")
+        print(f"   score={s} | тел={phone} | email={found}")
 
         if s >= MIN_SCORE:
             letter = generate_letter(company)
