@@ -11,16 +11,15 @@ import time
 import re
 
 CATEGORIES = [
-    ("https://zoon.ru/msk/it_outsourcing/",        "Информационные технологии"),
-    ("https://zoon.ru/msk/programming/",           "Разработка программного обеспечения"),
-    ("https://zoon.ru/msk/banks/",                 "Банки"),
-    ("https://zoon.ru/msk/insurance_companies/",   "Страхование"),
-    ("https://zoon.ru/msk/consulting/",            "Консалтинг"),
-    ("https://zoon.ru/msk/lawyers/",               "Юридические услуги"),
-    ("https://zoon.ru/msk/marketing/",             "Маркетинг"),
-    ("https://zoon.ru/msk/advertising_agencies/",  "Реклама"),
-    ("https://zoon.ru/msk/recruitment/",           "Кадровые агентства"),
-    ("https://zoon.ru/msk/pharmaceutics/",         "Фармацевтика"),
+    ("https://zoon.ru/msk/internet/",                    "Информационные технологии"),
+    ("https://zoon.ru/msk/banks/",                       "Банки"),
+    ("https://zoon.ru/msk/law/",                         "Юридические услуги"),
+    ("https://zoon.ru/msk/business/",                    "Консалтинг и бизнес-услуги"),
+    ("https://zoon.ru/msk/drugstore/",                   "Фармацевтика"),
+    ("https://zoon.ru/msk/insurance/",                   "Страхование"),
+    ("https://zoon.ru/msk/marketing/",                   "Маркетинг"),
+    ("https://zoon.ru/msk/advertising_agencies/",        "Реклама"),
+    ("https://zoon.ru/msk/recruitment/",                 "Кадровые агентства"),
 ]
 
 ZOON_BASE = "https://zoon.ru"
