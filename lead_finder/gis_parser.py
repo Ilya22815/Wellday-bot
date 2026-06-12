@@ -73,6 +73,10 @@ def get_companies(api_key, queries=None, per_page=50):
                 if not items:
                     break
 
+                # Один раз показываем какие поля реально пришли
+                if page == 1 and query == queries[0]:
+                    print(f"[2GIS] Поля в ответе: {list(items[0].keys())}")
+
                 for item in items:
                     name = item.get("name", "").strip()
                     if not name or name in seen_names:
@@ -113,23 +117,33 @@ def get_companies(api_key, queries=None, per_page=50):
 
 
 def _extract_phone(item):
-    contacts = item.get("contact_groups", [])
-    for group in contacts:
+    # Вариант 1: contact_groups -> contacts
+    for group in item.get("contact_groups", []):
         for contact in group.get("contacts", []):
             if contact.get("type") == "phone":
                 return contact.get("value", "")
+    # Вариант 2: contacts напрямую
+    for contact in item.get("contacts", []):
+        if contact.get("type") == "phone":
+            return contact.get("value", "")
     return None
 
 
 def _extract_site(item):
-    contacts = item.get("contact_groups", [])
-    for group in contacts:
+    # Вариант 1: contact_groups -> contacts
+    for group in item.get("contact_groups", []):
         for contact in group.get("contacts", []):
             if contact.get("type") == "website":
                 url = contact.get("value", "")
                 if url and "2gis" not in url:
                     return url
-    # Также проверяем external_content
+    # Вариант 2: contacts напрямую
+    for contact in item.get("contacts", []):
+        if contact.get("type") == "website":
+            url = contact.get("value", "")
+            if url and "2gis" not in url:
+                return url
+    # Вариант 3: external_content
     for ext in item.get("external_content", []):
         if ext.get("type") == "website":
             return ext.get("url", "")
