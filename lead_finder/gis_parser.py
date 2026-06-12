@@ -3,21 +3,24 @@ import time
 
 GIS_API = "https://catalog.api.2gis.com/3.0/items"
 
+# Moscow city_id in 2GIS
+MOSCOW_CITY_ID = "1"
+
 SEARCH_QUERIES = [
-    "IT компания Москва",
-    "разработка программного обеспечения Москва",
-    "системный интегратор Москва",
-    "банк Москва",
-    "страховая компания Москва",
-    "консалтинговая компания Москва",
-    "юридическая компания Москва",
-    "аудиторская компания Москва",
-    "маркетинговое агентство Москва",
-    "рекламное агентство Москва",
-    "фармацевтическая компания Москва",
-    "медицинская компания Москва",
-    "телекоммуникационная компания Москва",
-    "финансовая компания Москва",
+    "IT компания",
+    "разработка программного обеспечения",
+    "системный интегратор",
+    "банк",
+    "страховая компания",
+    "консалтинговая компания",
+    "юридическая компания",
+    "аудиторская компания",
+    "маркетинговое агентство",
+    "рекламное агентство",
+    "фармацевтическая компания",
+    "медицинская компания",
+    "телекоммуникационная компания",
+    "финансовая компания",
 ]
 
 
@@ -35,6 +38,7 @@ def get_companies(api_key, queries=None, per_page=10):
     for query in queries:
         print(f"[2GIS] Ищем: {query}...")
         page = 1
+        got_any = False
 
         while True:
             try:
@@ -42,6 +46,7 @@ def get_companies(api_key, queries=None, per_page=10):
                     GIS_API,
                     params={
                         "q": query,
+                        "city_id": MOSCOW_CITY_ID,
                         "fields": "items.contact_groups,items.address,items.external_content,items.rubrics",
                         "key": api_key,
                         "page_size": per_page,
@@ -57,7 +62,7 @@ def get_companies(api_key, queries=None, per_page=10):
                     return companies
 
                 if resp.status_code != 200:
-                    print(f"[2GIS] Статус: {resp.status_code}, ответ: {resp.text[:200]}")
+                    print(f"[2GIS] Статус {resp.status_code}: {resp.text[:300]}")
                     break
 
                 try:
@@ -66,15 +71,22 @@ def get_companies(api_key, queries=None, per_page=10):
                     print(f"[2GIS] Ошибка JSON: {e}, текст: {resp.text[:200]}")
                     break
 
-                items = data.get("result", {}).get("items", [])
-                if page == 1:
-                    print(f"[2GIS] Статус={resp.status_code}, items={len(items)}, total={data.get('result',{}).get('total',0)}")
+                result = data.get("result", {})
+                items = result.get("items", [])
+                total = result.get("total", 0)
+
+                print(f"[2GIS]   стр.{page}: статус={resp.status_code}, найдено={len(items)}, всего={total}")
 
                 if not items:
+                    if not got_any and page == 1:
+                        # Print raw response to help diagnose
+                        print(f"[2GIS]   Ответ API: {str(data)[:400]}")
                     break
 
+                got_any = True
+
                 if page == 1 and query == queries[0]:
-                    print(f"[2GIS] Поля в ответе: {list(items[0].keys())}")
+                    print(f"[2GIS]   Поля первой записи: {list(items[0].keys())}")
 
                 for item in items:
                     name = item.get("name", "").strip()
@@ -99,7 +111,6 @@ def get_companies(api_key, queries=None, per_page=10):
                         "emails": [],
                     })
 
-                total = data.get("result", {}).get("total", 0)
                 if page * per_page >= min(total, 200):
                     break
 
@@ -143,7 +154,3 @@ def _extract_site(item):
         if ext.get("type") == "website":
             return ext.get("url", "")
     return None
-
-
-
-
