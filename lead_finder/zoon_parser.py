@@ -62,10 +62,14 @@ def get_companies(pages_per_category=2):
                         import subprocess, os
                         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                         debug_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zoon_debug.html")
-                        subprocess.run(["git", "-C", repo_root, "add", debug_path], capture_output=True)
-                        subprocess.run(["git", "-C", repo_root, "commit", "-m", "debug: Zoon HTML dump"], capture_output=True)
-                        subprocess.run(["git", "-C", repo_root, "push"], capture_output=True)
-                        print("[Zoon] Готово — HTML на GitHub")
+                        r1 = subprocess.run(["git", "-C", repo_root, "add", debug_path], capture_output=True, text=True)
+                        r2 = subprocess.run(["git", "-C", repo_root, "commit", "-m", "debug: Zoon HTML dump"], capture_output=True, text=True)
+                        r3 = subprocess.run(["git", "-C", repo_root, "push", "origin", "claude/code-editing-capability-q77b1y"], capture_output=True, text=True)
+                        if r3.returncode == 0:
+                            print("[Zoon] HTML на GitHub")
+                        else:
+                            print(f"[Zoon] Ошибка push: {r3.stderr[:200]}")
+                            print(f"[Zoon] add: {r1.returncode}, commit: {r2.returncode}, push: {r3.returncode}")
 
                     items = _extract_companies(driver, industry)
                     added = 0
