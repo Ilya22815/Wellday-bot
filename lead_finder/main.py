@@ -10,7 +10,8 @@ TELEGRAM_CHAT_ID = "8819726375"
 GIS_API_KEY      = "ece1b98f-ad93-4671-b213-22d108a36b71"
 YANDEX_API_KEY   = ""
 HH_CLIENT_ID     = ""
-USE_ZOON         = True
+USE_ZOON         = False
+USE_YELL         = True
 MIN_SCORE        = 30
 
 SEEN_FILE = "seen.json"
@@ -59,19 +60,19 @@ def collect_companies():
                 added += 1
         print(f"   Яндекс: {added} новых компаний")
 
-    if USE_ZOON:
-        from zoon_parser import get_companies as zoon_get
-        print("Ищем через Zoon.ru...")
-        zoon_companies = zoon_get()
+    if USE_YELL:
+        from yell_parser import get_companies as yell_get
+        print("Ищем через Yell.ru...")
+        yell_companies = yell_get()
         added = 0
-        for c in zoon_companies:
+        for c in yell_companies:
             key = c["name"].lower().strip()
             if key not in seen_names:
                 seen_names.add(key)
-                c["source"] = "Zoon"
+                c["source"] = "Yell"
                 companies.append(c)
                 added += 1
-        print(f"   Zoon: {added} новых компаний")
+        print(f"   Yell: {added} новых компаний")
 
     if HH_CLIENT_ID:
         from hh_parser import get_companies as hh_get
