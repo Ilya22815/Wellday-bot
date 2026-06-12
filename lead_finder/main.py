@@ -5,13 +5,10 @@ from email_finder import find_emails_on_site
 from scorer import score
 from letter_generator import generate_letter
 
-TELEGRAM_TOKEN   = "8834041003:AAEM1rx_yp19xqrZt6j3E1GAjGbfwwRWi2o"
-TELEGRAM_CHAT_ID = "8819726375"
-GIS_API_KEY      = "ece1b98f-ad93-4671-b213-22d108a36b71"
 YANDEX_API_KEY   = ""
-HH_CLIENT_ID     = ""
 USE_ZOON         = True
 USE_YELL         = False
+USE_HH           = True
 MIN_SCORE        = 30
 
 SEEN_FILE = "seen.json"
@@ -34,31 +31,19 @@ def collect_companies():
     companies = []
     seen_names = set()
 
-    if GIS_API_KEY:
-        from gis_parser import get_companies as gis_get
-        print("Ищем через 2GIS...")
-        gis_companies = gis_get(api_key=GIS_API_KEY)
-        for c in gis_companies:
-            key = c["name"].lower().strip()
-            if key not in seen_names:
-                seen_names.add(key)
-                c["source"] = "2GIS"
-                companies.append(c)
-        print(f"   2GIS: {len(gis_companies)} компаний")
-
-    if YANDEX_API_KEY:
-        from yandex_parser import get_companies as yandex_get
-        print("Ищем через Яндекс...")
-        yandex_companies = yandex_get(api_key=YANDEX_API_KEY)
+    if USE_HH:
+        from hh_parser import get_companies as hh_get
+        print("Ищем через hh.ru...")
+        hh_companies = hh_get()
         added = 0
-        for c in yandex_companies:
+        for c in hh_companies:
             key = c["name"].lower().strip()
             if key not in seen_names:
                 seen_names.add(key)
-                c["source"] = "Яндекс"
+                c["source"] = "hh.ru"
                 companies.append(c)
                 added += 1
-        print(f"   Яндекс: {added} новых компаний")
+        print(f"   hh.ru: {added} компаний")
 
     if USE_ZOON:
         from zoon_parser import get_companies as zoon_get
@@ -74,19 +59,19 @@ def collect_companies():
                 added += 1
         print(f"   Zoon: {added} новых компаний")
 
-    if HH_CLIENT_ID:
-        from hh_parser import get_companies as hh_get
-        print("Ищем через hh.ru...")
-        hh_companies = hh_get(client_id=HH_CLIENT_ID)
+    if YANDEX_API_KEY:
+        from yandex_parser import get_companies as yandex_get
+        print("Ищем через Яндекс...")
+        yandex_companies = yandex_get(api_key=YANDEX_API_KEY)
         added = 0
-        for c in hh_companies:
+        for c in yandex_companies:
             key = c["name"].lower().strip()
             if key not in seen_names:
                 seen_names.add(key)
-                c["source"] = "hh.ru"
+                c["source"] = "Яндекс"
                 companies.append(c)
                 added += 1
-        print(f"   hh.ru: {added} новых компаний")
+        print(f"   Яндекс: {added} новых компаний")
 
     return companies
 
@@ -194,10 +179,6 @@ def save_excel(hot_leads):
 
 
 def run():
-    if not GIS_API_KEY and not HH_CLIENT_ID:
-        print("Нет ни одного ключа!")
-        return
-
     seen = load_seen()
     print(f"Уже обработано ранее: {len(seen)} компаний")
 

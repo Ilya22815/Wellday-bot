@@ -1,62 +1,59 @@
 import requests
-from bs4 import BeautifulSoup
 import time
-import re
 
-# Отрасли hh.ru которые нас интересуют (IT, финансы, консалтинг, маркетинг, фарма)
-INDUSTRIES = [
-    "7",    # Информационные технологии
-    "9",    # Финансы
-    "10",   # Консалтинг
-    "13",   # Маркетинг, реклама, PR
-    "23",   # Фармацевтика
-    "5",    # Телекоммуникации
-]
-
+HH_API = "https://api.hh.ru"
 MOSCOW_AREA = "1"
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Referer": "https://hh.ru/",
+    "User-Agent": "WelldayBot/1.0 (wellday@well-day.ru)",
+    "Accept": "application/json",
+    "HH-User-Agent": "WelldayBot/1.0 (wellday@well-day.ru)",
 })
 
+# ID отраслей в hh.ru
+INDUSTRIES = [
+    ("7",  "Информационные технологии"),
+    ("9",  "Финансы"),
+    ("10", "Консалтинг"),
+    ("13", "Маркетинг и реклама"),
+    ("23", "Фармацевтика"),
+    ("5",  "Телекоммуникации"),
+    ("6",  "Страхование"),
+    ("3",  "Банки"),
+]
 
-def get_companies(pages_per_industry=2, min_vacancies=2):
-    """
-    Скрапит hh.ru/employers_company — работает как обычный браузер.
-    Возвращает список компаний Москвы по нужным отраслям.
-    """
-    # Сначала заходим на главную — получаем куки
-    try:
-        SESSION.get("https://hh.ru/", timeout=10)
-        time.sleep(1)
-    except Exception:
-        pass
 
+def get_companies(pages_per_industry=5, min_vacancies=0):
     companies = []
     seen_ids = set()
 
-    for industry in INDUSTRIES:
+    for industry_id, industry_name in INDUSTRIES:
+        print(f"[hh.ru] Отрасль: {industry_name}...")
+        found_in_industry = 0
+
         for page in range(pages_per_industry):
             try:
-                url = "https://hh.ru/employers_company"
-                params = {
-                    "area": MOSCOW_AREA,
-                    "industry": industry,
-                    "page": page,
-                }
-                resp = SESSION.get(url, params=params, timeout=10)
+                resp = SESSION.get(
+                    f"{HH_API}/employers",
+                    params={
+                        "area": MOSCOW_AREA,
+                        "industry": industry_id,
+                        "per_page": 100,
+                        "page": page,
+                    },
+                    timeout=10,
+                )
 
                 if resp.status_code != 200:
-                    print(f"[hh.ru] отрасль={industry} стр={page}: статус {resp.status_code}")
+                    print(f"[hh.ru] Статус {resp.status_code}: {resp.text[:200]}")
                     break
 
-                items = _parse_employers_page(resp.text)
+                data = resp.json()
+                items = data.get("items", [])
+
+                if not items:
+                    break
 
                 for item in items:
                     emp_id = item.get("id")
@@ -64,90 +61,74 @@ def get_companies(pages_per_industry=2, min_vacancies=2):
                         continue
                     seen_ids.add(emp_id)
 
-                    # Получаем детали компании
-                    detail = _get_employer_detail(emp_id)
-                    if detail and detail.get("open_vacancies", 0) >= min_vacancies:
-                        companies.append(detail)
+                    detail = _get_detail(emp_id)
+                    if detail is None:
+                        continue
 
-                    time.sleep(0.5)
+                    if detail.get("open_vacancies", 0) < min_vacancies:
+                        continue
 
-                if not items:
+                    detail["industries"] = [industry_name]
+                    companies.append(detail)
+                    found_in_industry += 1
+
+                    time.sleep(0.2)
+
+                pages_total = data.get("pages", 1)
+                if page + 1 >= pages_total:
                     break
 
-                time.sleep(1)
+                time.sleep(0.5)
 
             except Exception as e:
                 print(f"[hh.ru] Ошибка: {e}")
                 break
 
+        print(f"[hh.ru]   Найдено: {found_in_industry}")
+        time.sleep(0.5)
+
+    print(f"[hh.ru] Итого: {len(companies)} компаний")
     return companies
 
 
-def _parse_employers_page(html):
-    """Парсит список компаний со страницы hh.ru/employers_company"""
-    soup = BeautifulSoup(html, "html.parser")
-    companies = []
-
-    # Ищем карточки компаний
-    cards = soup.find_all("a", href=re.compile(r"/employer/\d+"))
-
-    for card in cards:
-        href = card.get("href", "")
-        match = re.search(r"/employer/(\d+)", href)
-        if match:
-            emp_id = match.group(1)
-            name = card.get_text(strip=True)
-            if name:
-                companies.append({"id": emp_id, "name": name})
-
-    return companies
-
-
-def _get_employer_detail(employer_id):
-    """Получает детали компании через hh.ru API (с куками браузерной сессии)"""
+def _get_detail(employer_id):
     try:
         resp = SESSION.get(
-            f"https://api.hh.ru/employers/{employer_id}",
-            headers={"Accept": "application/json"},
-            timeout=10
+            f"{HH_API}/employers/{employer_id}",
+            timeout=10,
         )
-
         if resp.status_code != 200:
             return None
 
         d = resp.json()
+        name = d.get("name", "").strip()
+        if not name:
+            return None
 
         size_label = (d.get("size") or {}).get("name", "")
-        employee_count = _parse_size(size_label)
 
         return {
-            "id": employer_id,
-            "name": d.get("name", ""),
-            "site_url": d.get("site_url", ""),
-            "hh_url": d.get("alternate_url", ""),
-            "industries": [i.get("name", "") for i in d.get("industries", [])],
+            "name": name,
+            "phone": None,
+            "site_url": d.get("site_url") or "",
+            "address": "",
             "open_vacancies": d.get("open_vacancies", 0),
-            "employee_count": employee_count,
+            "employee_count": _parse_size(size_label),
             "trusted": d.get("trusted", False),
+            "emails": [],
         }
-    except Exception as e:
-        print(f"[hh.ru] Детали {employer_id}: {e}")
+    except Exception:
         return None
 
 
 def _parse_size(label):
-    mapping = {
-        "от 1 до 10": 5,
-        "от 10 до 50": 30,
-        "от 50 до 100": 75,
-        "от 100 до 500": 300,
-        "от 500 до 1000": 750,
-        "более 1000": 2000,
-        "from 1 to 10": 5,
-        "from 10 to 50": 30,
-        "from 50 to 100": 75,
-        "from 100 to 500": 300,
-        "from 500 to 1000": 750,
-        "more than 1000": 2000,
-    }
-    return mapping.get(label, 0)
+    for key, val in [
+        ("более 1000", 2000), ("more than 1000", 2000),
+        ("от 500", 750), ("from 500", 750),
+        ("от 100", 300), ("from 100", 300),
+        ("от 50", 75),  ("from 50", 75),
+        ("от 10", 30),  ("from 10", 30),
+    ]:
+        if key in label:
+            return val
+    return 0
