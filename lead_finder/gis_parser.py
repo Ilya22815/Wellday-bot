@@ -43,12 +43,9 @@ def get_companies(api_key, queries=None, per_page=10):
                     GIS_API,
                     params={
                         "q": query,
-                        "fields": "items.contact_groups,items.address,items.external_content,items.rubrics",
                         "key": api_key,
                         "page_size": per_page,
                         "page": page,
-                        "type": "branch",
-                        "sort": "relevance",
                     },
                     timeout=10
                 )

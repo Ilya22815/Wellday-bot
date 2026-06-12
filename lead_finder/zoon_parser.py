@@ -85,6 +85,7 @@ def get_companies(pages_per_category=2):
 
                     # Diagnostics only on first page of first category
                     if page == 1 and base_url == CATEGORIES[0][0]:
+                        print(f"[Zoon] Текущий URL после загрузки: {driver.current_url}")
                         _print_diagnostics(html, category_path)
 
                     items = _extract_companies_bs4(html, industry, category_path)
@@ -124,16 +125,16 @@ def _print_diagnostics(html, category_path):
     all_links = soup.find_all("a", href=True)
     print(f"[Zoon] Всего ссылок: {len(all_links)}")
 
-    # Show all hrefs that contain 'moscow' to see the URL pattern
-    moscow_hrefs = [a["href"] for a in all_links if "moscow" in a.get("href", "").lower()]
-    print(f"[Zoon] Ссылок с 'moscow': {len(moscow_hrefs)}")
-    for href in moscow_hrefs[:20]:
+    # Show all hrefs that contain the category path
+    cat_hrefs = [a["href"] for a in all_links if category_path in a.get("href", "")]
+    print(f"[Zoon] Ссылок содержащих '{category_path}': {len(cat_hrefs)}")
+    for href in cat_hrefs[:20]:
         print(f"  {href}")
 
-    if not moscow_hrefs:
-        print("[Zoon] Первые 10 любых ссылок на странице:")
-        for a in all_links[:10]:
-            print(f"  {a['href']}")
+    if not cat_hrefs:
+        print("[Zoon] Первые 15 любых ссылок на странице:")
+        for a in all_links[:15]:
+            print(f"  {a.get('href', '(нет href)')}")
 
 
 def _normalize_href(href, category_path):
