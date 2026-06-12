@@ -52,7 +52,7 @@ def get_companies(api_key, queries=None, per_page=10):
                         "page_size": per_page,
                         "page": page,
                         "type": "branch",
-                        "sort": "rank",
+                        "sort": "relevance",
                     },
                     timeout=10
                 )
