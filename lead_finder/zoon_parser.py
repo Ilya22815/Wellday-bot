@@ -2,6 +2,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
@@ -20,6 +23,8 @@ CATEGORIES = [
     ("https://zoon.ru/moscow/pharmaceutics/",         "Фармацевтика"),
 ]
 
+ZOON_BASE = "https://zoon.ru"
+
 
 def _create_driver():
     options = Options()
@@ -27,6 +32,7 @@ def _create_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
@@ -34,6 +40,18 @@ def _create_driver():
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
+
+
+def _wait_for_companies(driver, category_path, timeout=20):
+    """Wait until at least one company link appears on the page."""
+    xpath = f"//a[contains(@href, '{category_path}/')]"
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.XPATH, xpath))
+        )
+        return True
+    except TimeoutException:
+        return False
 
 
 def get_companies(pages_per_category=2):
@@ -45,20 +63,27 @@ def get_companies(pages_per_category=2):
     try:
         for base_url, industry in CATEGORIES:
             print(f"[Zoon] Категория: {industry}...")
-            # Extract the category path for URL-based filtering
-            # e.g. "https://zoon.ru/moscow/it_outsourcing/" -> "/moscow/it_outsourcing/"
-            category_path = base_url.replace("https://zoon.ru", "").rstrip("/")
+            category_path = base_url.replace(ZOON_BASE, "").rstrip("/")
 
             for page in range(1, pages_per_category + 1):
                 page_url = base_url if page == 1 else f"{base_url}?page={page}"
 
                 try:
                     driver.get(page_url)
-                    time.sleep(5)
+
+                    # Wait for company links to appear (up to 20 seconds)
+                    loaded = _wait_for_companies(driver, category_path)
+
+                    if not loaded:
+                        # Scroll to trigger lazy loading, wait more
+                        driver.execute_script("window.scrollTo(0, 500)")
+                        time.sleep(3)
+                        driver.execute_script("window.scrollTo(0, 1500)")
+                        time.sleep(2)
 
                     html = driver.page_source
 
-                    # On first page of first category, print diagnostic info
+                    # Diagnostics only on first page of first category
                     if page == 1 and base_url == CATEGORIES[0][0]:
                         _print_diagnostics(html, category_path)
 
@@ -76,7 +101,7 @@ def get_companies(pages_per_category=2):
                     if added == 0:
                         break
 
-                    time.sleep(1)
+                    time.sleep(2)
 
                 except Exception as e:
                     print(f"[Zoon] Ошибка на {page_url}: {e}")
@@ -93,18 +118,41 @@ def get_companies(pages_per_category=2):
 
 def _print_diagnostics(html, category_path):
     soup = BeautifulSoup(html, "html.parser")
-    title = soup.title.text if soup.title else "нет"
+    title = soup.title.text.strip() if soup.title else "нет"
     print(f"[Zoon] Заголовок страницы: {title}")
 
-    # Count links matching company URL pattern
-    pattern = re.compile(r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+")
-    matching = [a["href"] for a in soup.find_all("a", href=True) if pattern.match(a["href"])]
-    print(f"[Zoon] Ссылок на компании найдено: {len(matching)}")
+    all_links = soup.find_all("a", href=True)
+    print(f"[Zoon] Всего ссылок: {len(all_links)}")
 
-    # Show first 2000 chars of HTML for debugging
-    print(f"[Zoon] === НАЧАЛО HTML ===")
-    print(html[:2000])
-    print(f"[Zoon] === КОНЕЦ HTML (показаны первые 2000 символов из {len(html)}) ===")
+    # Show all hrefs that contain 'moscow' to see the URL pattern
+    moscow_hrefs = [a["href"] for a in all_links if "moscow" in a.get("href", "").lower()]
+    print(f"[Zoon] Ссылок с 'moscow': {len(moscow_hrefs)}")
+    for href in moscow_hrefs[:20]:
+        print(f"  {href}")
+
+    if not moscow_hrefs:
+        print("[Zoon] Первые 10 любых ссылок на странице:")
+        for a in all_links[:10]:
+            print(f"  {a['href']}")
+
+
+def _normalize_href(href, category_path):
+    """Return absolute href, or None if not a company link."""
+    if not href:
+        return None
+    # Absolute URL: https://zoon.ru/moscow/category/slug/
+    abs_pat = re.compile(
+        r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+/?$"
+    )
+    # Relative URL: /moscow/category/slug/
+    rel_pat = re.compile(
+        r"^" + re.escape(category_path) + r"/[^/?#]+/?$"
+    )
+    if abs_pat.match(href):
+        return href.rstrip("/")
+    if rel_pat.match(href):
+        return (ZOON_BASE + href).rstrip("/")
+    return None
 
 
 def _extract_companies_bs4(html, industry, category_path):
@@ -112,30 +160,22 @@ def _extract_companies_bs4(html, industry, category_path):
     companies = []
     seen_hrefs = set()
 
-    # Strategy: find all <a> links pointing to company detail pages
-    # Zoon company URLs look like: https://zoon.ru/moscow/it_outsourcing/some-company/
-    pattern = re.compile(r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+/?$")
-
-    company_links = [a for a in soup.find_all("a", href=True) if pattern.match(a["href"])]
-
-    for link in company_links:
-        href = link["href"].rstrip("/")
-        if href in seen_hrefs:
+    for link in soup.find_all("a", href=True):
+        norm = _normalize_href(link["href"], category_path)
+        if not norm or norm in seen_hrefs:
             continue
-        seen_hrefs.add(href)
+        seen_hrefs.add(norm)
 
-        # The company name is the link text, or text of a heading inside the link
         name = link.get_text(strip=True)
         if not name or len(name) < 3:
             continue
 
-        # Walk up to find a card container that has phone/address
+        # Walk up to find a card container that has a phone
         container = link.parent
-        for _ in range(4):
+        for _ in range(5):
             if container is None:
                 break
-            text = container.get_text(" ", strip=True)
-            if re.search(r"\+?[\d][\d\s\-\(\)]{6,}", text):
+            if re.search(r"\+?[\d][\d\s\-\(\)]{6,}", container.get_text(" ", strip=True)):
                 break
             container = container.parent
 
@@ -173,11 +213,9 @@ def _find_phone(tag):
 def _find_address(tag):
     if tag is None:
         return None
-    # Look for itemprop=address first
     el = tag.find(attrs={"itemprop": "address"})
     if el:
         return el.get_text(strip=True)
-    # Look for class containing 'address' or 'addr'
     for el in tag.find_all(True):
         cls = " ".join(el.get("class", []))
         if re.search(r"address|addr|location", cls, re.I):
