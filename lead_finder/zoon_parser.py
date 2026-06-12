@@ -54,11 +54,18 @@ def get_companies(pages_per_category=2):
                     driver.get(page_url)
                     time.sleep(4)
 
-                    # Отладка — сохраняем HTML первой страницы
+                    # Отладка — сохраняем HTML и пушим на GitHub
                     if page == 1 and base_url == CATEGORIES[0][0]:
                         with open("zoon_debug.html", "w", encoding="utf-8") as f:
                             f.write(driver.page_source)
-                        print("[Zoon] Сохранил HTML в zoon_debug.html")
+                        print("[Zoon] Сохранил HTML, пушу на GitHub...")
+                        import subprocess, os
+                        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        debug_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zoon_debug.html")
+                        subprocess.run(["git", "-C", repo_root, "add", debug_path], capture_output=True)
+                        subprocess.run(["git", "-C", repo_root, "commit", "-m", "debug: Zoon HTML dump"], capture_output=True)
+                        subprocess.run(["git", "-C", repo_root, "push"], capture_output=True)
+                        print("[Zoon] Готово — HTML на GitHub")
 
                     items = _extract_companies(driver, industry)
                     added = 0
