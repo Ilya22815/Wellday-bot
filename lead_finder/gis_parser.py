@@ -57,11 +57,18 @@ def get_companies(api_key, queries=None, per_page=10):
                     return companies
 
                 if resp.status_code != 200:
-                    print(f"[2GIS] Статус: {resp.status_code}")
+                    print(f"[2GIS] Статус: {resp.status_code}, ответ: {resp.text[:200]}")
                     break
 
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except Exception as e:
+                    print(f"[2GIS] Ошибка JSON: {e}, текст: {resp.text[:200]}")
+                    break
+
                 items = data.get("result", {}).get("items", [])
+                if page == 1:
+                    print(f"[2GIS] Статус={resp.status_code}, items={len(items)}, total={data.get('result',{}).get('total',0)}")
 
                 if not items:
                     break
