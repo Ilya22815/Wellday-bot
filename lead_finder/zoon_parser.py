@@ -37,6 +37,7 @@ def _create_driver():
     options.add_experimental_option("useAutomationExtension", False)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+    driver.set_page_load_timeout(25)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
