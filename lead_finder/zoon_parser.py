@@ -4,11 +4,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 import re
+import random
 
 CATEGORIES = [
     ("https://zoon.ru/msk/internet/",                    "Информационные технологии"),
@@ -32,12 +33,16 @@ def _create_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    # Match actual Chrome 149 version
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
-    driver.set_page_load_timeout(25)
+    driver.set_page_load_timeout(30)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
@@ -68,10 +73,28 @@ def get_companies(pages_per_category=2):
             for page in range(1, pages_per_category + 1):
                 page_url = base_url if page == 1 else f"{base_url}?page={page}"
 
-                try:
-                    driver.get(page_url)
+                loaded = False
+                for attempt in range(3):
+                    try:
+                        driver.get(page_url)
+                        loaded = True
+                        break
+                    except WebDriverException as e:
+                        err_msg = str(e)
+                        if "ERR_CONNECTION_TIMED_OUT" in err_msg or "ERR_CONNECTION_REFUSED" in err_msg:
+                            wait_sec = (attempt + 1) * 20
+                            print(f"[Zoon] Соединение не установлено (попытка {attempt+1}/3), жду {wait_sec}с...")
+                            time.sleep(wait_sec)
+                        else:
+                            print(f"[Zoon] Ошибка на {page_url}: {e}")
+                            break
 
-                    # Wait for company links to appear (up to 20 seconds)
+                if not loaded:
+                    print(f"[Zoon] Пропускаю {page_url} — не удалось подключиться")
+                    break
+
+                try:
+                    # Wait for company links to appear
                     _wait_for_companies(driver, category_path)
                     html = driver.page_source
 
@@ -94,13 +117,14 @@ def get_companies(pages_per_category=2):
                     if added == 0:
                         break
 
-                    time.sleep(2)
+                    # Randomised delay to look less like a bot
+                    time.sleep(random.uniform(2.5, 5.0))
 
                 except Exception as e:
-                    print(f"[Zoon] Ошибка на {page_url}: {e}")
+                    print(f"[Zoon] Ошибка обработки {page_url}: {e}")
                     break
 
-            time.sleep(1)
+            time.sleep(random.uniform(2.0, 4.0))
 
     finally:
         driver.quit()
