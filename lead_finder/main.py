@@ -200,7 +200,11 @@ def run():
 
         print(f"[{i}/{len(new_companies)}] {name}")
 
-        emails = find_emails_on_site(site) if site else []
+        # Only search emails on real company sites, not on directory pages
+        if site and "zoon.ru" not in site and "hh.ru" not in site:
+            emails = find_emails_on_site(site)
+        else:
+            emails = []
         # Remove emails belonging to the directory site itself
         emails = [e for e in emails if not any(d in e for d in ["@zoon.ru", "@yell.ru", "@2gis.com", "@hh.ru"])]
         company["emails"] = emails
