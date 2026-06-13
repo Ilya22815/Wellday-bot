@@ -155,6 +155,13 @@ def _normalize_href(href, category_path):
     return None
 
 
+SKIP_NAMES = {
+    "смотреть больше", "читать отзывы", "все отзывы", "показать телефон",
+    "записаться", "на карте", "позвонить", "подробнее", "написать",
+    "сайт", "отзывы", "фото", "цены", "акции", "контакты",
+}
+
+
 def _extract_companies_bs4(html, industry, category_path):
     soup = BeautifulSoup(html, "html.parser")
     companies = []
@@ -164,11 +171,18 @@ def _extract_companies_bs4(html, industry, category_path):
         norm = _normalize_href(link["href"], category_path)
         if not norm or norm in seen_hrefs:
             continue
-        seen_hrefs.add(norm)
+
+        # Skip links to /reviews/, /photo/, /prices/ etc.
+        if any(x in norm for x in ["/reviews/", "/photo/", "/prices/", "/metro/", "/type/"]):
+            continue
 
         name = link.get_text(strip=True)
         if not name or len(name) < 3:
             continue
+        if name.lower() in SKIP_NAMES:
+            continue
+
+        seen_hrefs.add(norm)
 
         # Walk up to find a card container that has a phone
         container = link.parent
@@ -185,7 +199,7 @@ def _extract_companies_bs4(html, industry, category_path):
         companies.append({
             "name": name,
             "phone": phone,
-            "site_url": None,
+            "site_url": norm,  # Zoon page URL — email_finder can visit it
             "address": address,
             "industries": [industry],
             "open_vacancies": 0,
