@@ -41,7 +41,7 @@ def _create_driver():
     return driver
 
 
-def _wait_for_companies(driver, category_path, timeout=20):
+def _wait_for_companies(driver, category_path, timeout=8):
     """Wait until at least one company link appears on the page."""
     xpath = f"//a[contains(@href, '{category_path}/')]"
     try:
@@ -71,15 +71,7 @@ def get_companies(pages_per_category=2):
                     driver.get(page_url)
 
                     # Wait for company links to appear (up to 20 seconds)
-                    loaded = _wait_for_companies(driver, category_path)
-
-                    if not loaded:
-                        # Scroll to trigger lazy loading, wait more
-                        driver.execute_script("window.scrollTo(0, 500)")
-                        time.sleep(3)
-                        driver.execute_script("window.scrollTo(0, 1500)")
-                        time.sleep(2)
-
+                    _wait_for_companies(driver, category_path)
                     html = driver.page_source
 
                     # Diagnostics only on first page of first category
