@@ -210,9 +210,6 @@ def _find_phone(tag):
     m = re.search(r"(\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}", text)
     if m:
         return m.group(0)
-    m = re.search(r"\+?[\d][\d\s\-\(\)]{9,14}", text)
-    if m:
-        return m.group(0).strip()
     return None
 
 
