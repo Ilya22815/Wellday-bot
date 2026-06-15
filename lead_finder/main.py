@@ -5,14 +5,20 @@ from email_finder import find_emails_on_site
 from scorer import score
 from letter_generator import generate_letter
 
-YANDEX_API_KEY   = ""
-USE_ZOON         = True
-USE_YELL         = False
-USE_HH           = True
+# === Источники данных ===
+USE_ZOON         = False   # заблокирован (недоступен с текущей сети)
+USE_HH           = False   # API закрыт для анонимного доступа
+USE_RUSPROFILE   = True    # публичный справочник ЕГРЮЛ, без ключей
+GIS_API_KEY      = ""      # ключ 2GIS: зарегистрируй бесплатно на dev.2gis.com
+YANDEX_API_KEY   = ""      # ключ Яндекс карт (опционально)
+
 MIN_SCORE        = 30
 
 SEEN_FILE = "seen.json"
 CRM_FILE  = "crm.xlsx"
+
+# Домены справочников — не ищем email на их страницах
+DIRECTORY_DOMAINS = ["zoon.ru", "hh.ru", "rusprofile.ru", "yell.ru", "2gis.com"]
 
 
 def load_seen():
@@ -58,6 +64,34 @@ def collect_companies():
                 companies.append(c)
                 added += 1
         print(f"   Zoon: {added} новых компаний")
+
+    if USE_RUSPROFILE:
+        from rusprofile_parser import get_companies as rp_get
+        print("Ищем через Rusprofile.ru (ЕГРЮЛ)...")
+        rp_companies = rp_get()
+        added = 0
+        for c in rp_companies:
+            key = c["name"].lower().strip()
+            if key not in seen_names:
+                seen_names.add(key)
+                c["source"] = "Rusprofile"
+                companies.append(c)
+                added += 1
+        print(f"   Rusprofile: {added} новых компаний")
+
+    if GIS_API_KEY:
+        from gis_parser import get_companies as gis_get
+        print("Ищем через 2GIS...")
+        gis_companies = gis_get(api_key=GIS_API_KEY)
+        added = 0
+        for c in gis_companies:
+            key = c["name"].lower().strip()
+            if key not in seen_names:
+                seen_names.add(key)
+                c["source"] = "2GIS"
+                companies.append(c)
+                added += 1
+        print(f"   2GIS: {added} новых компаний")
 
     if YANDEX_API_KEY:
         from yandex_parser import get_companies as yandex_get
@@ -200,13 +234,13 @@ def run():
 
         print(f"[{i}/{len(new_companies)}] {name}")
 
-        # Only search emails on real company sites, not on directory pages
-        if site and "zoon.ru" not in site and "hh.ru" not in site:
+        # Не ищем email на страницах справочников
+        if site and not any(d in site for d in DIRECTORY_DOMAINS):
             emails = find_emails_on_site(site)
         else:
             emails = []
-        # Remove emails belonging to the directory site itself
-        emails = [e for e in emails if not any(d in e for d in ["@zoon.ru", "@yell.ru", "@2gis.com", "@hh.ru"])]
+        # Фильтруем email самих справочников
+        emails = [e for e in emails if not any(f"@{d}" in e for d in DIRECTORY_DOMAINS)]
         company["emails"] = emails
 
         s = score(company)
