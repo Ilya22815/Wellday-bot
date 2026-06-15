@@ -8,7 +8,8 @@ from letter_generator import generate_letter
 # === Источники данных ===
 USE_ZOON         = False   # заблокирован (недоступен с текущей сети)
 USE_HH           = False   # API закрыт для анонимного доступа
-USE_RUSPROFILE   = True    # публичный справочник ЕГРЮЛ, без ключей
+USE_RUSPROFILE   = False   # реестр юрлиц, без контактов — бесполезен
+USE_YELL         = True    # бизнес-справочник с телефонами и сайтами
 YANDEX_API_KEY   = ""      # ключ Яндекс карт (опционально)
 
 MIN_SCORE        = 30
@@ -64,19 +65,19 @@ def collect_companies():
                 added += 1
         print(f"   Zoon: {added} новых компаний")
 
-    if USE_RUSPROFILE:
-        from rusprofile_parser import get_companies as rp_get
-        print("Ищем через Rusprofile.ru (ЕГРЮЛ)...")
-        rp_companies = rp_get()
+    if USE_YELL:
+        from yell_parser import get_companies as yell_get
+        print("Ищем через Yell.ru...")
+        yell_companies = yell_get()
         added = 0
-        for c in rp_companies:
+        for c in yell_companies:
             key = c["name"].lower().strip()
             if key not in seen_names:
                 seen_names.add(key)
-                c["source"] = "Rusprofile"
+                c["source"] = "Yell"
                 companies.append(c)
                 added += 1
-        print(f"   Rusprofile: {added} новых компаний")
+        print(f"   Yell: {added} новых компаний")
 
     if YANDEX_API_KEY:
         from yandex_parser import get_companies as yandex_get

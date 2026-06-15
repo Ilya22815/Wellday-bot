@@ -5,7 +5,7 @@ import re
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
     "Referer": "https://www.yell.ru/",
@@ -46,6 +46,10 @@ def get_companies(pages_per_category=3):
                     print(f"[Yell] Статус {resp.status_code} для {page_url}")
                     break
 
+                # Диагностика первой страницы первой категории
+                if page == 1 and base_url == CATEGORIES[0][0]:
+                    _print_diagnostics(resp.text, resp.url)
+
                 items = _parse_listing(resp.text, industry)
                 added = 0
                 for item in items:
@@ -54,6 +58,8 @@ def get_companies(pages_per_category=3):
                         seen_names.add(name)
                         companies.append(item)
                         added += 1
+
+                print(f"[Yell]   стр.{page}: найдено {added} компаний")
 
                 if added == 0:
                     break
@@ -68,6 +74,20 @@ def get_companies(pages_per_category=3):
 
     print(f"[Yell] Найдено: {len(companies)} компаний")
     return companies
+
+
+def _print_diagnostics(html, final_url):
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(strip=True) if soup.title else "нет"
+    print(f"[Yell] URL: {final_url}")
+    print(f"[Yell] Заголовок: {title}")
+    all_links = soup.find_all("a", href=True)
+    print(f"[Yell] Всего ссылок: {len(all_links)}")
+    # Ищем карточки компаний по классам
+    for cls_pat in [r"company", r"CompanySnippet", r"listing", r"snippet", r"card", r"item"]:
+        found = soup.find_all(True, class_=re.compile(cls_pat, re.I))
+        if found:
+            print(f"[Yell] Элементов class=*{cls_pat}*: {len(found)}")
 
 
 def _parse_listing(html, industry):
