@@ -148,29 +148,39 @@ def _get_companies_selenium(pages_per_category):
             for page in range(1, pages_per_category + 1):
                 page_url = base_url if page == 1 else f"{base_url}?page={page}"
 
-                loaded = False
+                html = None
                 for attempt in range(3):
                     try:
                         driver.get(page_url)
-                        loaded = True
+                        html = driver.page_source
                         break
                     except WebDriverException as e:
                         err_msg = str(e)
-                        if "ERR_CONNECTION_TIMED_OUT" in err_msg or "ERR_CONNECTION_REFUSED" in err_msg:
+                        if "Timed out receiving message from renderer" in err_msg or "timeout" in err_msg.lower():
+                            # Page loaded but JS took too long — grab whatever HTML is there
+                            try:
+                                html = driver.page_source
+                                if html and len(html) > 5000:
+                                    print(f"[Zoon]   JS-таймаут, но HTML получен ({len(html)} байт)")
+                                    break
+                            except Exception:
+                                pass
+                            print(f"[Zoon] Рендер завис (попытка {attempt+1}/3), жду 15с...")
+                            time.sleep(15)
+                        elif "ERR_CONNECTION_TIMED_OUT" in err_msg or "ERR_CONNECTION_REFUSED" in err_msg:
                             wait_sec = (attempt + 1) * 20
-                            print(f"[Zoon] Соединение не установлено (попытка {attempt+1}/3), жду {wait_sec}с...")
+                            print(f"[Zoon] Нет соединения (попытка {attempt+1}/3), жду {wait_sec}с...")
                             time.sleep(wait_sec)
                         else:
-                            print(f"[Zoon] Ошибка на {page_url}: {e}")
+                            print(f"[Zoon] Ошибка на {page_url}: {err_msg[:120]}")
                             break
 
-                if not loaded:
-                    print(f"[Zoon] Пропускаю {page_url} — не удалось подключиться")
+                if not html or len(html) < 5000:
+                    print(f"[Zoon] Пропускаю {page_url} — не удалось получить страницу")
                     break
 
                 try:
                     _wait_for_companies(driver, category_path)
-                    html = driver.page_source
 
                     if page == 1 and base_url == CATEGORIES[0][0]:
                         print(f"[Zoon] Текущий URL после загрузки: {driver.current_url}")

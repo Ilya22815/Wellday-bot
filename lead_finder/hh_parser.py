@@ -11,29 +11,28 @@ SESSION.headers.update({
     "HH-User-Agent": "WelldayBot/1.0 (wellday@well-day.ru)",
 })
 
-# ID отраслей в hh.ru (для фильтрации вакансий)
+# Текстовые запросы по отраслям (не требуют OAuth)
 INDUSTRIES = [
-    ("7",  "Информационные технологии"),
-    ("9",  "Финансы"),
-    ("10", "Консалтинг"),
-    ("13", "Маркетинг и реклама"),
-    ("23", "Фармацевтика"),
-    ("5",  "Телекоммуникации"),
-    ("6",  "Страхование"),
-    ("3",  "Банки"),
+    ("IT компания разработка программное обеспечение",  "Информационные технологии"),
+    ("банк кредитная организация финансы",              "Финансы"),
+    ("консалтинг управленческий консультант",           "Консалтинг"),
+    ("маркетинговое агентство реклама",                 "Маркетинг и реклама"),
+    ("фармацевтика лекарства медицина",                 "Фармацевтика"),
+    ("телекоммуникации связь интернет провайдер",       "Телекоммуникации"),
+    ("страховая компания страхование",                  "Страхование"),
+    ("юридические услуги право адвокат",                "Юридические услуги"),
 ]
 
 
-def get_companies(pages_per_industry=5, min_vacancies=0):
+def get_companies(pages_per_industry=3, min_vacancies=0):
     """
-    Получаем компании через публичный endpoint /vacancies (не требует OAuth).
-    Из вакансий извлекаем уникальных работодателей, затем
-    пробуем получить детали через /employers/{id}.
+    Ищем компании через публичный endpoint /vacancies с текстовым поиском.
+    Параметр industry требует OAuth — используем text вместо него.
     """
     companies = []
     seen_ids = set()
 
-    for industry_id, industry_name in INDUSTRIES:
+    for search_text, industry_name in INDUSTRIES:
         print(f"[hh.ru] Отрасль: {industry_name}...")
         found_in_industry = 0
 
@@ -43,13 +42,16 @@ def get_companies(pages_per_industry=5, min_vacancies=0):
                     f"{HH_API}/vacancies",
                     params={
                         "area": MOSCOW_AREA,
-                        "industry": industry_id,
+                        "text": search_text,
                         "per_page": 100,
                         "page": page,
-                        "only_with_salary": False,
                     },
                     timeout=10,
                 )
+
+                if resp.status_code == 403:
+                    print(f"[hh.ru] 403 — hh.ru заблокировал анонимный доступ к вакансиям")
+                    return companies
 
                 if resp.status_code != 200:
                     print(f"[hh.ru] Статус {resp.status_code}: {resp.text[:200]}")
@@ -68,11 +70,9 @@ def get_companies(pages_per_industry=5, min_vacancies=0):
                         continue
                     seen_ids.add(emp_id)
 
-                    # Пробуем получить детали (site_url, open_vacancies)
                     detail = _get_detail(emp_id)
 
                     if detail is None:
-                        # Используем минимальные данные из вакансии
                         name = employer.get("name", "").strip()
                         if not name:
                             continue
