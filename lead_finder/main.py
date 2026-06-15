@@ -9,7 +9,6 @@ from letter_generator import generate_letter
 USE_ZOON         = False   # заблокирован (недоступен с текущей сети)
 USE_HH           = False   # API закрыт для анонимного доступа
 USE_RUSPROFILE   = True    # публичный справочник ЕГРЮЛ, без ключей
-GIS_API_KEY      = ""      # ключ 2GIS: зарегистрируй бесплатно на dev.2gis.com
 YANDEX_API_KEY   = ""      # ключ Яндекс карт (опционально)
 
 MIN_SCORE        = 30
@@ -78,20 +77,6 @@ def collect_companies():
                 companies.append(c)
                 added += 1
         print(f"   Rusprofile: {added} новых компаний")
-
-    if GIS_API_KEY:
-        from gis_parser import get_companies as gis_get
-        print("Ищем через 2GIS...")
-        gis_companies = gis_get(api_key=GIS_API_KEY)
-        added = 0
-        for c in gis_companies:
-            key = c["name"].lower().strip()
-            if key not in seen_names:
-                seen_names.add(key)
-                c["source"] = "2GIS"
-                companies.append(c)
-                added += 1
-        print(f"   2GIS: {added} новых компаний")
 
     if YANDEX_API_KEY:
         from yandex_parser import get_companies as yandex_get
