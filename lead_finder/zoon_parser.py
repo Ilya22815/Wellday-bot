@@ -7,6 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
+import requests
 import time
 import re
 import random
@@ -25,6 +26,31 @@ CATEGORIES = [
 
 ZOON_BASE = "https://zoon.ru"
 
+REQUESTS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+}
+
+
+def _fetch_with_requests(url, category_path, timeout=15):
+    """Try fetching the page with plain requests (no browser). Returns html or None."""
+    try:
+        resp = requests.get(url, headers=REQUESTS_HEADERS, timeout=timeout, allow_redirects=True)
+        if resp.status_code != 200:
+            return None
+        html = resp.text
+        # Check if we actually got company links (not a captcha/block page)
+        if category_path.split("/")[-1] not in html and len(html) < 5000:
+            return None
+        companies = _extract_companies_bs4(html, "", category_path)
+        if companies:
+            return html
+        return None
+    except Exception:
+        return None
+
 
 def _create_driver():
     options = Options()
@@ -36,7 +62,6 @@ def _create_driver():
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-features=VizDisplayCompositor")
-    # Match actual Chrome 149 version
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
@@ -48,7 +73,6 @@ def _create_driver():
 
 
 def _wait_for_companies(driver, category_path, timeout=8):
-    """Wait until at least one company link appears on the page."""
     xpath = f"//a[contains(@href, '{category_path}/')]"
     try:
         WebDriverWait(driver, timeout).until(
@@ -60,7 +84,58 @@ def _wait_for_companies(driver, category_path, timeout=8):
 
 
 def get_companies(pages_per_category=2):
-    print("[Zoon] Запускаем браузер...")
+    # First, check if Zoon is reachable via plain requests (faster, no bot detection)
+    test_url = CATEGORIES[0][0]
+    test_path = test_url.replace(ZOON_BASE, "").rstrip("/")
+    print("[Zoon] Проверяем доступность через requests...")
+    use_requests = _fetch_with_requests(test_url, test_path) is not None
+
+    if use_requests:
+        print("[Zoon] Zoon доступен через requests — работаем без браузера (быстрее).")
+        return _get_companies_requests(pages_per_category)
+    else:
+        print("[Zoon] requests не дал результат — запускаем браузер...")
+        return _get_companies_selenium(pages_per_category)
+
+
+def _get_companies_requests(pages_per_category):
+    companies = []
+    seen_names = set()
+
+    for base_url, industry in CATEGORIES:
+        print(f"[Zoon] Категория: {industry}...")
+        category_path = base_url.replace(ZOON_BASE, "").rstrip("/")
+
+        for page in range(1, pages_per_category + 1):
+            page_url = base_url if page == 1 else f"{base_url}?page={page}"
+
+            html = _fetch_with_requests(page_url, category_path)
+            if html is None:
+                print(f"[Zoon]   стр.{page}: нет ответа")
+                break
+
+            items = _extract_companies_bs4(html, industry, category_path)
+            added = 0
+            for item in items:
+                name = item.get("name", "")
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    companies.append(item)
+                    added += 1
+
+            print(f"[Zoon]   стр.{page}: найдено {added} компаний")
+            if added == 0:
+                break
+
+            time.sleep(random.uniform(1.5, 3.0))
+
+        time.sleep(random.uniform(1.0, 2.0))
+
+    print(f"[Zoon] Найдено: {len(companies)} компаний")
+    return companies
+
+
+def _get_companies_selenium(pages_per_category):
     driver = _create_driver()
     companies = []
     seen_names = set()
@@ -94,11 +169,9 @@ def get_companies(pages_per_category=2):
                     break
 
                 try:
-                    # Wait for company links to appear
                     _wait_for_companies(driver, category_path)
                     html = driver.page_source
 
-                    # Diagnostics only on first page of first category
                     if page == 1 and base_url == CATEGORIES[0][0]:
                         print(f"[Zoon] Текущий URL после загрузки: {driver.current_url}")
                         _print_diagnostics(html, category_path)
@@ -117,7 +190,6 @@ def get_companies(pages_per_category=2):
                     if added == 0:
                         break
 
-                    # Randomised delay to look less like a bot
                     time.sleep(random.uniform(2.5, 5.0))
 
                 except Exception as e:
@@ -141,7 +213,6 @@ def _print_diagnostics(html, category_path):
     all_links = soup.find_all("a", href=True)
     print(f"[Zoon] Всего ссылок: {len(all_links)}")
 
-    # Show all hrefs that contain the category path
     cat_hrefs = [a["href"] for a in all_links if category_path in a.get("href", "")]
     print(f"[Zoon] Ссылок содержащих '{category_path}': {len(cat_hrefs)}")
     for href in cat_hrefs[:20]:
@@ -154,14 +225,11 @@ def _print_diagnostics(html, category_path):
 
 
 def _normalize_href(href, category_path):
-    """Return absolute href, or None if not a company link."""
     if not href:
         return None
-    # Absolute URL: https://zoon.ru/moscow/category/slug/
     abs_pat = re.compile(
         r"^https://zoon\.ru" + re.escape(category_path) + r"/[^/?#]+/?$"
     )
-    # Relative URL: /moscow/category/slug/
     rel_pat = re.compile(
         r"^" + re.escape(category_path) + r"/[^/?#]+/?$"
     )
@@ -189,7 +257,6 @@ def _extract_companies_bs4(html, industry, category_path):
         if not norm or norm in seen_hrefs:
             continue
 
-        # Skip links to /reviews/, /photo/, /prices/ etc.
         if any(x in norm for x in ["/reviews/", "/photo/", "/prices/", "/metro/", "/type/"]):
             continue
 
@@ -201,7 +268,6 @@ def _extract_companies_bs4(html, industry, category_path):
 
         seen_hrefs.add(norm)
 
-        # Walk up to find a card container that has a phone
         container = link.parent
         for _ in range(5):
             if container is None:
@@ -216,7 +282,7 @@ def _extract_companies_bs4(html, industry, category_path):
         companies.append({
             "name": name,
             "phone": phone,
-            "site_url": norm,  # Zoon page URL — email_finder can visit it
+            "site_url": norm,
             "address": address,
             "industries": [industry],
             "open_vacancies": 0,

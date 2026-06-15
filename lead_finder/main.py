@@ -8,7 +8,7 @@ from letter_generator import generate_letter
 YANDEX_API_KEY   = ""
 USE_ZOON         = True
 USE_YELL         = False
-USE_HH           = False  # включить когда придёт ключ hh.ru
+USE_HH           = True
 MIN_SCORE        = 30
 
 SEEN_FILE = "seen.json"

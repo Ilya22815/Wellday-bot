@@ -11,7 +11,7 @@ SESSION.headers.update({
     "HH-User-Agent": "WelldayBot/1.0 (wellday@well-day.ru)",
 })
 
-# ID отраслей в hh.ru
+# ID отраслей в hh.ru (для фильтрации вакансий)
 INDUSTRIES = [
     ("7",  "Информационные технологии"),
     ("9",  "Финансы"),
@@ -25,6 +25,11 @@ INDUSTRIES = [
 
 
 def get_companies(pages_per_industry=5, min_vacancies=0):
+    """
+    Получаем компании через публичный endpoint /vacancies (не требует OAuth).
+    Из вакансий извлекаем уникальных работодателей, затем
+    пробуем получить детали через /employers/{id}.
+    """
     companies = []
     seen_ids = set()
 
@@ -35,12 +40,13 @@ def get_companies(pages_per_industry=5, min_vacancies=0):
         for page in range(pages_per_industry):
             try:
                 resp = SESSION.get(
-                    f"{HH_API}/employers",
+                    f"{HH_API}/vacancies",
                     params={
                         "area": MOSCOW_AREA,
                         "industry": industry_id,
                         "per_page": 100,
                         "page": page,
+                        "only_with_salary": False,
                     },
                     timeout=10,
                 )
@@ -55,15 +61,31 @@ def get_companies(pages_per_industry=5, min_vacancies=0):
                 if not items:
                     break
 
-                for item in items:
-                    emp_id = item.get("id")
+                for vacancy in items:
+                    employer = vacancy.get("employer") or {}
+                    emp_id = employer.get("id")
                     if not emp_id or emp_id in seen_ids:
                         continue
                     seen_ids.add(emp_id)
 
+                    # Пробуем получить детали (site_url, open_vacancies)
                     detail = _get_detail(emp_id)
+
                     if detail is None:
-                        continue
+                        # Используем минимальные данные из вакансии
+                        name = employer.get("name", "").strip()
+                        if not name:
+                            continue
+                        detail = {
+                            "name": name,
+                            "phone": None,
+                            "site_url": "",
+                            "address": "",
+                            "open_vacancies": 0,
+                            "employee_count": 0,
+                            "trusted": employer.get("trusted", False),
+                            "emails": [],
+                        }
 
                     if detail.get("open_vacancies", 0) < min_vacancies:
                         continue
@@ -124,10 +146,10 @@ def _get_detail(employer_id):
 def _parse_size(label):
     for key, val in [
         ("более 1000", 2000), ("more than 1000", 2000),
-        ("от 500", 750), ("from 500", 750),
-        ("от 100", 300), ("from 100", 300),
-        ("от 50", 75),  ("from 50", 75),
-        ("от 10", 30),  ("from 10", 30),
+        ("от 500", 750),      ("from 500", 750),
+        ("от 100", 300),      ("from 100", 300),
+        ("от 50", 75),        ("from 50", 75),
+        ("от 10", 30),        ("from 10", 30),
     ]:
         if key in label:
             return val
